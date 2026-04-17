@@ -41,4 +41,13 @@ describe("CircuitBreaker", () => {
     await breaker.recordFailure();
     expect(onTrip).toHaveBeenCalledTimes(1);
   });
+
+  it("un-trips on success so status reflects recovery", async () => {
+    const onTrip = vi.fn();
+    const breaker = new CircuitBreaker({ enabled: true, threshold: 1, onTrip });
+    await breaker.recordFailure();
+    expect(breaker.isTripped()).toBe(true);
+    breaker.recordSuccess();
+    expect(breaker.isTripped()).toBe(false);
+  });
 });

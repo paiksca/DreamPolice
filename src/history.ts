@@ -5,8 +5,7 @@ export type HistoryOutcome =
   | "accepted"
   | "accepted-after-correction"
   | "flagged"
-  | "skipped"
-  | "dry-run";
+  | "skipped";
 
 export type HistoryEntry = {
   timestamp: string;

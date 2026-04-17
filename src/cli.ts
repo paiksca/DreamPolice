@@ -3,7 +3,7 @@ import path from "node:path";
 import type { OpenClawConfig, OpenClawPluginApi } from "../api.js";
 import type { ResolvedDreamPoliceConfig } from "./config.js";
 import { readRecentHistory } from "./history.js";
-import { listSnapshots, restoreSnapshot } from "./snapshot.js";
+import { listSnapshots, parseSnapshotFilename, restoreSnapshot } from "./snapshot.js";
 import { CURSOR_RELATIVE_PATH } from "./tailer.js";
 
 type CliRegistrar = Parameters<OpenClawPluginApi["registerCli"]>[0];
@@ -190,24 +190,39 @@ export async function cmdUndo(
   });
   if (options.list) {
     if (snapshots.length === 0) {
-      process.stdout.write("dream-police: no snapshots on disk.\n");
+      if (!config.snapshots.enabled) {
+        process.stdout.write(
+          "dream-police: no snapshots on disk (snapshots.enabled is false; enable it in config).\n",
+        );
+        return;
+      }
+      process.stdout.write(
+        "dream-police: no snapshots on disk (none captured yet — run a correction first).\n",
+      );
       return;
     }
     for (const s of snapshots) {
-      process.stdout.write(`${new Date(s.mtimeMs).toISOString()}  ${s.filename}\n`);
+      const parsed = parseSnapshotFilename(s.filename);
+      const label = parsed ? parsed.memoryPath : s.filename;
+      process.stdout.write(`${new Date(s.mtimeMs).toISOString()}  ${label}  (${s.filename})\n`);
     }
     return;
   }
   if (snapshots.length === 0) {
+    if (!config.snapshots.enabled) {
+      process.stdout.write(
+        "dream-police: nothing to undo — snapshots.enabled is false. Turn it on in config so corrections are snapshot-protected.\n",
+      );
+      return;
+    }
     process.stdout.write(
-      "dream-police: nothing to undo (no snapshots). Enable snapshots.enabled or run a correction first.\n",
+      "dream-police: nothing to undo (no snapshots on disk yet). Run a correction first.\n",
     );
     return;
   }
   const latest = snapshots[0];
-  // Derive memoryPath from the snapshot filename or use the explicit --memory-path.
-  const targetMemoryPath =
-    options.memoryPath ?? inferMemoryPathFromSnapshotFilename(latest.filename) ?? "memory/long-term.md";
+  const parsed = parseSnapshotFilename(latest.filename);
+  const targetMemoryPath = options.memoryPath ?? parsed?.memoryPath ?? "memory/long-term.md";
   if (!options.yes) {
     process.stdout.write(
       `Would restore ${targetMemoryPath} from ${latest.filename}. Pass --yes to confirm.\n`,
@@ -220,20 +235,6 @@ export async function cmdUndo(
     memoryPath: targetMemoryPath,
   });
   process.stdout.write(`dream-police: restored ${targetMemoryPath} from ${latest.filename}\n`);
-}
-
-/**
- * Best-effort inverse of `slugifyMemoryPath`. The snapshot filename shape is
- * `<slug>.<iso-with-dashes>.snap`; we can recover the slug but not the exact
- * original path, so `--memory-path` should be passed explicitly whenever it
- * isn't `memory/long-term.md`.
- */
-function inferMemoryPathFromSnapshotFilename(filename: string): string | null {
-  const stripped = filename.replace(/\.snap$/, "");
-  const parts = stripped.split(".");
-  if (parts.length < 2) return null;
-  const slug = parts[0];
-  return slug.replace(/_/g, "/");
 }
 
 export function registerDreamPoliceCli(

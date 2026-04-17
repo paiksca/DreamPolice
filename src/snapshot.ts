@@ -47,12 +47,36 @@ function resolveDeps(deps: SnapshotDeps | undefined): Required<SnapshotDeps> {
   };
 }
 
-function slugifyMemoryPath(memoryPath: string): string {
-  return memoryPath.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+/**
+ * Encode a memory path into a filename-safe slug that round-trips back to
+ * the original path via `unslugifyMemoryPath`. We preserve dots (so file
+ * extensions survive) and use the single-character `~` as our slash
+ * replacement — slashes aren't allowed in filenames on most filesystems,
+ * and `~` never appears in OpenClaw memory paths in practice.
+ */
+export function slugifyMemoryPath(memoryPath: string): string {
+  return memoryPath.replace(/\//g, "~");
 }
 
+export function unslugifyMemoryPath(slug: string): string {
+  return slug.replace(/~/g, "/");
+}
+
+export const SNAPSHOT_SEPARATOR = "__";
+
 function snapshotFilename(memoryPath: string, timestamp: string): string {
-  return `${slugifyMemoryPath(memoryPath)}.${timestamp.replace(/[:.]/g, "-")}.snap`;
+  return `${slugifyMemoryPath(memoryPath)}${SNAPSHOT_SEPARATOR}${timestamp.replace(/[:.]/g, "-")}.snap`;
+}
+
+export function parseSnapshotFilename(filename: string): { memoryPath: string; timestamp: string } | null {
+  if (!filename.endsWith(".snap")) return null;
+  const base = filename.slice(0, -".snap".length);
+  const sepIndex = base.lastIndexOf(SNAPSHOT_SEPARATOR);
+  if (sepIndex <= 0) return null;
+  const slug = base.slice(0, sepIndex);
+  const timestamp = base.slice(sepIndex + SNAPSHOT_SEPARATOR.length);
+  if (!slug || !timestamp) return null;
+  return { memoryPath: unslugifyMemoryPath(slug), timestamp };
 }
 
 /**
@@ -98,7 +122,9 @@ export async function listSnapshots(params: {
     ? params.snapshotDir
     : path.resolve(params.workspaceDir, params.snapshotDir);
   const names = await deps.readdir(absoluteSnapshotDir);
-  const prefix = params.memoryPath ? slugifyMemoryPath(params.memoryPath) + "." : null;
+  const prefix = params.memoryPath
+    ? slugifyMemoryPath(params.memoryPath) + SNAPSHOT_SEPARATOR
+    : null;
   const filtered = names.filter((n) => n.endsWith(".snap") && (!prefix || n.startsWith(prefix)));
   const enriched = await Promise.all(
     filtered.map(async (filename) => {

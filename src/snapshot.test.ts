@@ -5,9 +5,38 @@ import path from "node:path";
 import {
   captureSnapshot,
   listSnapshots,
+  parseSnapshotFilename,
   pruneSnapshots,
   restoreSnapshot,
+  slugifyMemoryPath,
+  unslugifyMemoryPath,
 } from "./snapshot.js";
+
+describe("slugifyMemoryPath / unslugifyMemoryPath round-trip", () => {
+  it.each([
+    "memory/long-term.md",
+    "memory/dreams/2026-04-17.md",
+    "some.deep/nested/path/with-dots.md",
+    "flat.md",
+  ])("round-trips %s through the slug encoding", (memoryPath) => {
+    expect(unslugifyMemoryPath(slugifyMemoryPath(memoryPath))).toBe(memoryPath);
+  });
+
+  it("parses a snapshot filename back into memoryPath and timestamp", () => {
+    const parsed = parseSnapshotFilename(
+      "memory~long-term.md__2026-04-17T00-00-00-000Z.snap",
+    );
+    expect(parsed).not.toBeNull();
+    if (!parsed) return;
+    expect(parsed.memoryPath).toBe("memory/long-term.md");
+    expect(parsed.timestamp).toBe("2026-04-17T00-00-00-000Z");
+  });
+
+  it("returns null for non-snapshot filenames", () => {
+    expect(parseSnapshotFilename("foo.bar.txt")).toBeNull();
+    expect(parseSnapshotFilename("no-separator.snap")).toBeNull();
+  });
+});
 
 describe("snapshot (real fs)", () => {
   let tmp: string;

@@ -26,6 +26,10 @@ export class CircuitBreaker {
   recordSuccess(): void {
     if (!this.params.enabled) return;
     this.consecutiveFailures = 0;
+    // A successful call after a trip means upstream is healthy again. Reset
+    // the tripped flag so the runtime status reflects recovery. The pause
+    // file itself is untouched — the user decides when to resume.
+    this.tripped = false;
   }
 
   async recordFailure(): Promise<void> {

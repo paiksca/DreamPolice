@@ -443,15 +443,18 @@ export async function processPromotionEvent(params: {
       state.roundsUsed,
       lastCritique?.confidence,
       reasonToRationale(state.reason),
-      config.dryRun ? "dry-run" : `state=${state.reason.kind}`,
+      config.dryRun
+        ? `dry-run; state=${state.reason.kind}`
+        : `state=${state.reason.kind}`,
       deps,
     );
   } else if (state.kind === "accepted") {
-    const outcome: HistoryOutcome = state.roundsUsed === 0 ? "accepted" : "accepted-after-correction";
+    const outcome: HistoryOutcome =
+      state.roundsUsed === 0 ? "accepted" : "accepted-after-correction";
     await writeHistoryIfEnabled(
       config,
       workspaceDir,
-      config.dryRun ? "dry-run" : outcome,
+      outcome,
       verifierDiff,
       state.roundsUsed,
       lastCritique?.confidence,
