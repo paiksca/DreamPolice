@@ -2,7 +2,7 @@ import type { MemoryHostPromotionAppliedEvent, PluginLogger } from "../api.js";
 import { appendAuditEntry } from "./audit.js";
 import type { ResolvedDreamPoliceConfig } from "./config.js";
 import { applyCorrection } from "./corrector.js";
-import { buildPromotionDiff, type ReadFileFn } from "./diff.js";
+import { buildPromotionDiff, buildPriorContext, type ReadFileFn } from "./diff.js";
 import { applyPrivacyPolicy } from "./privacy.js";
 import { INITIAL_STATE, isTerminal, transition, type TransitionParams } from "./state-machine.js";
 import type {
@@ -30,6 +30,10 @@ export type PipelineResult = {
   skippedReason?: string;
 };
 
+function assertNever(reason: never): never {
+  throw new Error(`pipeline: unreachable flag reason ${JSON.stringify(reason)}`);
+}
+
 function reasonToVerdict(reason: FlagReason): "needs_revision" | "unsalvageable" | "error" {
   switch (reason.kind) {
     case "unsalvageable":
@@ -38,10 +42,9 @@ function reasonToVerdict(reason: FlagReason): "needs_revision" | "unsalvageable"
       return "needs_revision";
     case "verifier_error":
     case "corrector_error":
-    case "watchdog_timeout":
       return "error";
     default:
-      throw new Error("pipeline: unreachable flag reason");
+      return assertNever(reason);
   }
 }
 
@@ -57,10 +60,8 @@ function reasonToRationale(reason: FlagReason): string {
       }${reason.error.code === "network" ? ` detail=${reason.error.detail}` : ""}`;
     case "corrector_error":
       return `corrector_error: ${reason.detail}`;
-    case "watchdog_timeout":
-      return "watchdog_timeout";
     default:
-      throw new Error("pipeline: unreachable flag reason");
+      return assertNever(reason);
   }
 }
 
@@ -72,7 +73,6 @@ export async function processPromotionEvent(params: {
   deps?: PipelineDeps;
 }): Promise<PipelineResult> {
   const { workspaceDir, config, event, logger, deps = {} } = params;
-  const now = deps.now ?? (() => Date.now());
 
   if (event.applied < config.scope.minApplied) {
     return {
@@ -135,16 +135,19 @@ export async function processPromotionEvent(params: {
   }
 
   const verifierDiff = privacyDecision.diff;
+  const priorContext = await buildPriorContext(workspaceDir, verifierDiff, {
+    readFile: deps.readFile,
+    maxLines: config.verifier.priorContextLines,
+  });
 
   const params_: TransitionParams = {
     maxRounds: config.retry.maxRounds,
-    watchdogMs: Math.max(5 * provider.timeoutMs, provider.timeoutMs),
     correctorEnabled: config.verifier.corrector !== null,
   };
 
   let state = transition(
     INITIAL_STATE,
-    { kind: "batch_received", diff: verifierDiff, now: now() },
+    { kind: "batch_received", diff: verifierDiff },
     params_,
   );
 
@@ -156,7 +159,7 @@ export async function processPromotionEvent(params: {
         {
           diff: state.diff,
           provider,
-          priorContext: "",
+          priorContext,
           critiqueContext: lastCritique
             ? { lastCritique, roundsUsed: state.roundsUsed }
             : undefined,
@@ -198,7 +201,10 @@ export async function processPromotionEvent(params: {
           params_,
         );
       }
+      continue;
     }
+
+    throw new Error(`pipeline: unexpected non-terminal state ${state.kind}`);
   }
 
   if (state.kind === "flagged") {

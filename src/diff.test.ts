@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryHostPromotionAppliedEvent } from "../api.js";
-import { buildPromotionDiff } from "./diff.js";
+import { buildPriorContext, buildPromotionDiff } from "./diff.js";
+import type { PromotionDiff } from "./types.js";
 
 const MEMORY = [
   "# Long-term memory",
@@ -109,5 +110,64 @@ describe("buildPromotionDiff", () => {
       },
     });
     expect(seen).toBe("/ws/memory/long-term.md");
+  });
+});
+
+describe("buildPriorContext", () => {
+  const DIFF: PromotionDiff = {
+    memoryPath: "memory/long-term.md",
+    appliedAt: "2026-04-16T00:00:00Z",
+    candidates: [
+      {
+        key: "k1",
+        sourcePath: "a.md",
+        memoryPath: "memory/long-term.md",
+        startLine: 8,
+        endLine: 8,
+        score: 0.9,
+        recallCount: 3,
+        snippet: "- claim one",
+      },
+    ],
+    rawBlock: "- claim one",
+  };
+
+  it("returns the lines immediately preceding the first candidate, capped at maxLines", async () => {
+    const prior = await buildPriorContext("/ws", DIFF, {
+      readFile: async () => MEMORY,
+      maxLines: 3,
+    });
+    // Candidate starts at line 8; with maxLines=3 we want lines 5..7.
+    expect(prior).toBe(["- Water boils at 100C", "", "## Promoted 2026-04-16"].join("\n"));
+  });
+
+  it("returns empty string when maxLines is 0", async () => {
+    const prior = await buildPriorContext("/ws", DIFF, {
+      readFile: async () => MEMORY,
+      maxLines: 0,
+    });
+    expect(prior).toBe("");
+  });
+
+  it("returns empty string when the candidate starts at line 1", async () => {
+    const prior = await buildPriorContext(
+      "/ws",
+      {
+        ...DIFF,
+        candidates: [{ ...DIFF.candidates[0], startLine: 1, endLine: 1 }],
+      },
+      { readFile: async () => MEMORY, maxLines: 5 },
+    );
+    expect(prior).toBe("");
+  });
+
+  it("swallows readFile errors and returns empty string", async () => {
+    const prior = await buildPriorContext("/ws", DIFF, {
+      readFile: async () => {
+        throw new Error("missing");
+      },
+      maxLines: 5,
+    });
+    expect(prior).toBe("");
   });
 });

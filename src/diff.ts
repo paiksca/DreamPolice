@@ -39,6 +39,10 @@ function expandToBlock(
   return { startLine, endLine };
 }
 
+function resolveMemoryAbsolutePath(workspaceDir: string, memoryPath: string): string {
+  return path.isAbsolute(memoryPath) ? memoryPath : path.resolve(workspaceDir, memoryPath);
+}
+
 export async function buildPromotionDiff(
   workspaceDir: string,
   event: MemoryHostPromotionAppliedEvent,
@@ -48,10 +52,7 @@ export async function buildPromotionDiff(
     return null;
   }
   const readFile = deps.readFile ?? defaultReadFile;
-  const absMemoryPath = path.isAbsolute(event.memoryPath)
-    ? event.memoryPath
-    : path.resolve(workspaceDir, event.memoryPath);
-  const content = await readFile(absMemoryPath);
+  const content = await readFile(resolveMemoryAbsolutePath(workspaceDir, event.memoryPath));
 
   const slices: PromotionCandidateSlice[] = event.candidates.map((candidate) => ({
     key: candidate.key,
@@ -75,4 +76,39 @@ export async function buildPromotionDiff(
     candidates: slices,
     rawBlock,
   };
+}
+
+/**
+ * Read up to `maxLines` of the memory file *preceding* the first candidate's
+ * startLine, so the verifier has local context (document structure, nearby
+ * definitions) without seeing the candidate block itself.
+ * Returns "" when `maxLines` is 0 or there's nothing to show.
+ */
+export async function buildPriorContext(
+  workspaceDir: string,
+  diff: PromotionDiff,
+  deps: { readFile?: ReadFileFn; maxLines?: number } = {},
+): Promise<string> {
+  const maxLines = Math.max(0, deps.maxLines ?? 0);
+  if (maxLines === 0 || diff.candidates.length === 0) {
+    return "";
+  }
+  const readFile = deps.readFile ?? defaultReadFile;
+  const absolutePath = resolveMemoryAbsolutePath(workspaceDir, diff.memoryPath);
+  let content: string;
+  try {
+    content = await readFile(absolutePath);
+  } catch {
+    return "";
+  }
+  const firstStartLine = diff.candidates.reduce(
+    (acc, c) => Math.min(acc, c.startLine),
+    Number.POSITIVE_INFINITY,
+  );
+  if (!Number.isFinite(firstStartLine) || firstStartLine <= 1) {
+    return "";
+  }
+  const endLine = (firstStartLine as number) - 1;
+  const startLine = Math.max(1, endLine - maxLines + 1);
+  return sliceLines(content, startLine, endLine);
 }

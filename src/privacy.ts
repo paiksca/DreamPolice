@@ -8,7 +8,10 @@ export type PrivacyDecision =
   | { kind: "flag"; diff: PromotionDiff; reason: string };
 
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-const PHONE_REGEX = /\+?\d[\d\s().-]{7,}\d/g;
+// Two bounded forms, neither with overlapping-class quantifiers that could
+// cause catastrophic backtracking: E.164-ish (+ with 7–15 digits) and
+// US-style formatted numbers with explicit separators.
+const PHONE_REGEX = /\+\d{7,15}\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\(\d{3}\)\s?\d{3}[-. ]\d{4}\b/g;
 const TOKEN_REGEX = /\b(?:sk|pk|rk|api)[-_][A-Za-z0-9]{16,}\b/g;
 
 function buildTagMatcher(tags: string[]): RegExp | null {
@@ -19,29 +22,33 @@ function buildTagMatcher(tags: string[]): RegExp | null {
   return new RegExp(`<!--\\s*tag:(?:${escaped.join("|")})\\s*-->`, "i");
 }
 
+/**
+ * Returns true iff `sourcePath` is inside the directory named by `prefix`.
+ * "Inside" means equal to the prefix OR the prefix plus a `/` and more path.
+ * Prevents `journal/secret` from matching `journal/secret-private`.
+ */
+function isWithinPrefix(sourcePath: string, prefix: string): boolean {
+  if (prefix.length === 0) return false;
+  if (sourcePath === prefix) return true;
+  const normalized = prefix.endsWith("/") ? prefix : `${prefix}/`;
+  return sourcePath.startsWith(normalized);
+}
+
 function matchesPathPattern(pathPatterns: string[], sourcePath: string): boolean {
   for (const pattern of pathPatterns) {
-    if (pattern.length === 0) {
+    if (pattern.length === 0) continue;
+    if (sourcePath === pattern) return true;
+    if (pattern.endsWith("/**")) {
+      if (isWithinPrefix(sourcePath, pattern.slice(0, -3))) return true;
       continue;
     }
-    if (sourcePath === pattern) {
-      return true;
-    }
-    if (pattern.endsWith("/**") && sourcePath.startsWith(pattern.slice(0, -3))) {
-      return true;
-    }
     if (pattern.includes("*")) {
-      const regex = new RegExp(
-        "^" +
-          pattern
-            .split("*")
-            .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-            .join(".*") +
-          "$",
-      );
-      if (regex.test(sourcePath)) {
-        return true;
-      }
+      const escaped = pattern
+        .split("*")
+        .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+        .join("[^/]*");
+      const regex = new RegExp(`^${escaped}$`);
+      if (regex.test(sourcePath)) return true;
     }
   }
   return false;
@@ -81,20 +88,14 @@ export function applyPrivacyPolicy(
   );
 
   if (blockedByPath || taggedCandidates.length > 0) {
+    const reason = blockedByPath
+      ? "source path matches a sensitive pattern"
+      : "candidate contains a sensitive tag marker";
     if (cfg.onSensitive === "skip") {
-      const reason = blockedByPath
-        ? "source path matches a sensitive pattern"
-        : "candidate contains a sensitive tag marker";
       return { kind: "skip", reason };
     }
     if (cfg.onSensitive === "flag") {
-      return {
-        kind: "flag",
-        diff,
-        reason: blockedByPath
-          ? "source path matches a sensitive pattern"
-          : "candidate contains a sensitive tag marker",
-      };
+      return { kind: "flag", diff, reason };
     }
   }
 

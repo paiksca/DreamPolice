@@ -18,6 +18,7 @@ type Cursor = {
 export type TailerHandler = (event: MemoryHostPromotionAppliedEvent) => Promise<void>;
 
 export type TailerDeps = {
+  readRange?: (absolutePath: string, start: number, end: number) => Promise<Buffer>;
   readFile?: (absolutePath: string) => Promise<string>;
   writeFile?: (absolutePath: string, content: string) => Promise<void>;
   stat?: (absolutePath: string) => Promise<{ size: number }>;
@@ -43,7 +44,25 @@ function defaultFileExists(absolutePath: string): Promise<boolean> {
     .catch(() => false);
 }
 
+async function defaultReadRange(
+  absolutePath: string,
+  start: number,
+  end: number,
+): Promise<Buffer> {
+  const length = Math.max(0, end - start);
+  if (length === 0) return Buffer.alloc(0);
+  const handle = await fs.open(absolutePath, "r");
+  try {
+    const buf = Buffer.allocUnsafe(length);
+    const { bytesRead } = await handle.read(buf, 0, length, start);
+    return bytesRead === length ? buf : buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
 const defaultDeps: Required<TailerDeps> = {
+  readRange: defaultReadRange,
   readFile: (p) => fs.readFile(p, "utf8"),
   writeFile: (p, c) => fs.writeFile(p, c, "utf8"),
   stat: (p) => fs.stat(p).then((s) => ({ size: s.size })),
@@ -55,6 +74,7 @@ const defaultDeps: Required<TailerDeps> = {
 
 function resolveDeps(deps: TailerDeps | undefined): Required<TailerDeps> {
   return {
+    readRange: deps?.readRange ?? defaultDeps.readRange,
     readFile: deps?.readFile ?? defaultDeps.readFile,
     writeFile: deps?.writeFile ?? defaultDeps.writeFile,
     stat: deps?.stat ?? defaultDeps.stat,
@@ -94,18 +114,36 @@ async function writeCursor(
   await deps.writeFile(cursorPath, JSON.stringify(cursor, null, 2));
 }
 
-function parseEventLines(raw: string): MemoryHostEvent[] {
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .flatMap((line) => {
+type ParsedChunk = {
+  events: MemoryHostEvent[];
+  consumedBytes: number;
+};
+
+/**
+ * Parse a buffer of newline-delimited JSON events.
+ * Only fully-terminated lines (ending in '\n') are consumed; a trailing
+ * partial line is left for the next poll so we never advance the cursor past
+ * bytes we didn't actually deliver.
+ */
+function parseChunk(buf: Buffer): ParsedChunk {
+  const events: MemoryHostEvent[] = [];
+  let consumedBytes = 0;
+  let lineStart = 0;
+  for (let i = 0; i < buf.length; i += 1) {
+    if (buf[i] === 0x0a /* '\n' */) {
+      const lineEnd = i;
+      const line = buf.toString("utf8", lineStart, lineEnd).trim();
+      consumedBytes = i + 1;
+      lineStart = i + 1;
+      if (line.length === 0) continue;
       try {
-        return [JSON.parse(line) as MemoryHostEvent];
+        events.push(JSON.parse(line) as MemoryHostEvent);
       } catch {
-        return [];
+        // skip malformed line
       }
-    });
+    }
+  }
+  return { events, consumedBytes };
 }
 
 function isPromotionApplied(event: MemoryHostEvent): event is MemoryHostPromotionAppliedEvent {
@@ -114,6 +152,7 @@ function isPromotionApplied(event: MemoryHostEvent): event is MemoryHostPromotio
 
 export class JournalTailer {
   private stopped = false;
+  private running = false;
   private timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private inflight: Promise<void> | null = null;
 
@@ -136,12 +175,15 @@ export class JournalTailer {
   }
 
   async start(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
     this.stopped = false;
     this.scheduleNext(this.params.pollIntervalMs);
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.running = false;
     if (this.timeoutHandle) {
       this.deps.clearTimeoutFn(this.timeoutHandle);
       this.timeoutHandle = null;
@@ -175,11 +217,11 @@ export class JournalTailer {
     if (stats.size === startOffset) {
       return 0;
     }
-    const raw = await this.deps.readFile(this.journalPath);
-    const sliced = raw.slice(startOffset);
-    const events = parseEventLines(sliced).filter(isPromotionApplied);
+    const buf = await this.deps.readRange(this.journalPath, startOffset, stats.size);
+    const { events, consumedBytes } = parseChunk(buf);
+    const promotions = events.filter(isPromotionApplied);
     let processed = 0;
-    for (const event of events) {
+    for (const event of promotions) {
       try {
         await this.params.handler(event);
         processed += 1;
@@ -192,8 +234,8 @@ export class JournalTailer {
       }
     }
     const nextCursor: Cursor = {
-      offset: Buffer.byteLength(raw, "utf8"),
-      lastTimestamp: events.at(-1)?.timestamp ?? cursor.lastTimestamp,
+      offset: startOffset + consumedBytes,
+      lastTimestamp: promotions.at(-1)?.timestamp ?? cursor.lastTimestamp,
     };
     await writeCursor(this.cursorPath, nextCursor, this.deps);
     return processed;
@@ -205,10 +247,13 @@ export class JournalTailer {
     }
     this.timeoutHandle = this.deps.setTimeoutFn(() => {
       this.timeoutHandle = null;
+      if (this.stopped) return;
       this.inflight = this.runOnce();
       void this.inflight.finally(() => {
         this.inflight = null;
-        this.scheduleNext(this.params.pollIntervalMs);
+        if (!this.stopped) {
+          this.scheduleNext(this.params.pollIntervalMs);
+        }
       });
     }, delayMs);
   }

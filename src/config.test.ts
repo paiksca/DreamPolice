@@ -8,9 +8,10 @@ describe("resolveDreamPoliceConfig", () => {
     expect(cfg.verifier.provider).toBeNull();
     expect(cfg.verifier.corrector).toBeNull();
     expect(cfg.retry.maxRounds).toBe(2);
-    expect(cfg.scope.phases).toEqual(["deep"]);
+    expect(cfg.scope.minApplied).toBe(1);
     expect(cfg.sensitivity.onSensitive).toBe("redact");
     expect(cfg.auditFile).toBe("memory/DREAMS_POLICE.md");
+    expect(cfg.verifier.priorContextLines).toBe(40);
   });
 
   it("treats an incomplete provider block as no provider", () => {

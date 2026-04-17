@@ -8,7 +8,6 @@ import type {
 
 export type TransitionParams = {
   maxRounds: number;
-  watchdogMs: number;
   correctorEnabled: boolean;
 };
 
@@ -26,23 +25,12 @@ export function transition(
   switch (state.kind) {
     case "idle": {
       if (event.kind === "batch_received") {
-        return {
-          kind: "verifying",
-          diff: event.diff,
-          roundsUsed: 0,
-          startedAt: event.now,
-        };
+        return { kind: "verifying", diff: event.diff, roundsUsed: 0 };
       }
       return state;
     }
 
     case "verifying": {
-      if (event.kind === "watchdog_fired") {
-        if (event.now - state.startedAt >= params.watchdogMs) {
-          return flagged(state.diff, { kind: "watchdog_timeout" }, state.roundsUsed);
-        }
-        return state;
-      }
       if (event.kind === "verifier_error") {
         return flagged(
           state.diff,
@@ -65,12 +53,7 @@ export function transition(
         );
       }
       if (event.kind === "correction_applied") {
-        return {
-          kind: "verifying",
-          diff: state.diff,
-          roundsUsed: state.roundsUsed + 1,
-          startedAt: Date.now(),
-        };
+        return { kind: "verifying", diff: state.diff, roundsUsed: state.roundsUsed + 1 };
       }
       return state;
     }
@@ -102,14 +85,7 @@ function handleCritique(
   if (!hasActionableIssue(critique)) {
     return { kind: "accepted", diff, roundsUsed };
   }
-  if (!params.correctorEnabled) {
-    return flagged(
-      diff,
-      { kind: "max_rounds_exceeded", lastRationale: critique.rationale },
-      roundsUsed,
-    );
-  }
-  if (roundsUsed >= params.maxRounds) {
+  if (!params.correctorEnabled || roundsUsed >= params.maxRounds) {
     return flagged(
       diff,
       { kind: "max_rounds_exceeded", lastRationale: critique.rationale },

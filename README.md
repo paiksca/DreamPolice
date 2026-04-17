@@ -2,16 +2,17 @@
 
 **An OpenClaw plugin that supervises memory consolidations.**
 
-OpenClaw's dreaming feature consolidates short-term memory into durable `MEMORY.md`
-entries during quiet hours. The consolidation decisions are made by the same
-agent that writes them — no independent verifier — so hallucinated claims can
-be silently promoted into long-term memory, which is sticky and hard to undo.
+OpenClaw's dreaming feature consolidates short-term memory into durable
+`MEMORY.md` entries during quiet hours. The consolidation decisions are made by
+the same agent that writes them — no independent verifier — so hallucinated
+claims can be silently promoted into long-term memory, which is sticky and hard
+to undo.
 
-DreamPolice watches those promotions, asks an external verifier model to fact-check
-them, and — if the verifier objects — re-runs the dream with a structured critique
-injected as targeted feedback. It never silently reverts: if correction fails after
-`retry.maxRounds`, the suspect promotion is flagged in `DREAMS_POLICE.md` for your
-review.
+DreamPolice watches those promotions, asks an external verifier model to
+fact-check them, and — if the verifier objects — re-runs the dream with a
+structured critique injected as targeted feedback. It never silently reverts:
+if correction fails after `retry.maxRounds`, the suspect promotion is flagged
+in `DREAMS_POLICE.md` for your review.
 
 ## How it works
 
@@ -21,8 +22,8 @@ review.
    file, and sends them to a verifier model you configure (OpenAI-compatible).
 3. If the verifier says `accepted`, the plugin logs and moves on.
 4. If the verifier returns `needs_revision` with structured issues, DreamPolice
-   applies the specific suggestions (`remove` / `rewrite` / `annotate`) and then
-   re-verifies. Up to `retry.maxRounds` rounds.
+   applies the specific suggestions (`remove` / `rewrite` / `annotate`) and
+   then re-verifies. Up to `retry.maxRounds` rounds.
 5. If the verifier still objects after the final round, DreamPolice appends a
    human-readable entry to `DREAMS_POLICE.md`. **It never silently reverts.**
 
@@ -63,7 +64,8 @@ pnpm add openclaw-dream-police
 ```
 
 Then register it with OpenClaw by adding the package as an extension in your
-OpenClaw configuration (see the OpenClaw docs on installing third-party plugins).
+OpenClaw configuration (see the OpenClaw docs on installing third-party
+plugins).
 
 ## Configuration
 
@@ -78,13 +80,11 @@ Add to your OpenClaw config at `plugins.entries.dream-police.config`:
       "apiKeyEnv": "DREAM_POLICE_API_KEY",
       "model": "gpt-5.4",
       "timeoutMs": 30000
-    }
+    },
+    "priorContextLines": 40
   },
   "retry": { "maxRounds": 2 },
-  "scope": {
-    "phases": ["deep"],
-    "minApplied": 1
-  },
+  "scope": { "minApplied": 1 },
   "sensitivity": {
     "tags": ["secret", "private", "pii"],
     "pathPatterns": [],
@@ -96,10 +96,11 @@ Add to your OpenClaw config at `plugins.entries.dream-police.config`:
 }
 ```
 
-The API key **never** lives in config — set it in the environment variable named
-by `apiKeyEnv`. The plugin uses an OpenAI-compatible `/v1/chat/completions`
-endpoint, so you can point it at any OpenAI-API-compatible service: OpenAI,
-Anthropic (via a proxy), local Ollama, LM Studio, OpenRouter, etc.
+The API key **never** lives in config — set it in the environment variable
+named by `apiKeyEnv`. The plugin uses an OpenAI-compatible
+`/v1/chat/completions` endpoint, so you can point it at any
+OpenAI-API-compatible service: OpenAI, Anthropic (via a proxy), local Ollama,
+LM Studio, OpenRouter, etc.
 
 ### Sensitivity modes
 
@@ -110,6 +111,10 @@ Anthropic (via a proxy), local Ollama, LM Studio, OpenRouter, etc.
   corrections are attempted for them.
 - **`flag`**: sensitive candidates are not sent, but an entry is appended to
   `DREAMS_POLICE.md` so you know a dream touched sensitive content.
+
+`sensitivity.pathPatterns` accepts either an exact path, a `prefix/**`
+directory-segment match, or an inline `*` that matches within a single
+directory segment (it does not cross `/`).
 
 ### Verifier output schema
 
@@ -133,15 +138,45 @@ The verifier model must return JSON of this shape:
 }
 ```
 
-`rewrite` actions with `confidence < 0.6` are auto-downgraded to `annotate` so a
-low-confidence verifier can't silently destroy legitimate memory.
+`rewrite` actions with `confidence < 0.6` are auto-downgraded to `annotate` so
+a low-confidence verifier can't silently destroy legitimate memory.
+
+### Prompt-injection hardening
+
+Every snippet the verifier sees is wrapped in delimiters
+`<BEGIN_SNIPPET-{nonce}>` / `<END_SNIPPET-{nonce}>` with a fresh random nonce
+per call, and the system prompt instructs the verifier to treat everything
+between those delimiters as data, never instructions. If a memory snippet
+tries to direct the verifier's behavior, that attempt is flagged in
+`rationale` rather than obeyed.
+
+## CLI
+
+Once the plugin is installed and enabled, OpenClaw exposes three subcommands:
+
+```bash
+openclaw dream-police status          # show enabled/paused state + last cursor
+openclaw dream-police status --json   # machine-readable snapshot
+openclaw dream-police pause           # create the pause file (stops processing)
+openclaw dream-police resume          # remove the pause file
+```
+
+## Gateway method
+
+The plugin also registers a gateway RPC method for UI/monitoring:
+
+- `dreamPolice.status` (scope: `operator.read`) — returns a live runtime
+  snapshot including the last processed event, any error, and the resolved
+  configuration.
 
 ## Emergency disable
 
 Three escape hatches:
 
-1. Set `plugins.entries.dream-police.config.enabled = false` (requires restart).
-2. Drop a `.dream-police.paused` file in the workspace root (polled live).
+1. Set `plugins.entries.dream-police.config.enabled = false` (requires
+   restart).
+2. Drop a `.dream-police.paused` file in the workspace root, or run
+   `openclaw dream-police pause` — polled live.
 3. Uninstall the plugin.
 
 ## Known limitations
@@ -149,8 +184,8 @@ Three escape hatches:
 - Verifier and corrector calls go out via raw `fetch`. There is no
   plugin-facing model-invocation API in OpenClaw yet.
 - The corrector writes memory files directly because OpenClaw's memory plugin
-  API doesn't expose a write seam. Edits are scoped to the exact line range the
-  promotion just wrote and use atomic temp-file + rename.
+  API doesn't expose a write seam. Edits are scoped to the exact line range
+  the promotion just wrote and use atomic temp-file + fsync + rename.
 - Interception is post-hoc (we tail the memory events journal). A future
   upstream PR to OpenClaw would add a pre-promotion hook so a verifier could
   veto bad promotions before they land.
@@ -161,10 +196,11 @@ Three escape hatches:
 pnpm install
 pnpm test          # runs all tests including the HTTP-based integration smoke
 pnpm typecheck
+pnpm build         # emits dist/ (JS + d.ts + sourcemaps)
 ```
 
-The test suite uses no external network — the integration smoke test spins up a
-localhost HTTP server to stand in for the verifier.
+The test suite uses no external network — the integration smoke test spins up
+a localhost HTTP server to stand in for the verifier.
 
 ## License
 

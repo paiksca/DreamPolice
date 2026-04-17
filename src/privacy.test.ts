@@ -83,6 +83,52 @@ describe("applyPrivacyPolicy", () => {
     expect(decision.kind).toBe("skip");
   });
 
+  it("/** glob requires a true segment boundary (journal/secretX/... does not match journal/secret/**)", () => {
+    const decision = applyPrivacyPolicy(
+      makeDiff([{ sourcePath: "journal/secret-leak/2026.md", snippet: "benign" }]),
+      { ...SENSITIVITY, pathPatterns: ["journal/secret/**"], onSensitive: "skip" },
+    );
+    expect(decision.kind).toBe("allow");
+  });
+
+  it("inline * glob does not cross directory separators", () => {
+    const decision = applyPrivacyPolicy(
+      makeDiff([{ sourcePath: "journal/2026/secret.md", snippet: "benign" }]),
+      { ...SENSITIVITY, pathPatterns: ["journal/*.md"], onSensitive: "skip" },
+    );
+    expect(decision.kind).toBe("allow");
+  });
+
+  it("inline * glob matches within a single segment", () => {
+    const decision = applyPrivacyPolicy(
+      makeDiff([{ sourcePath: "journal/secret.md", snippet: "benign" }]),
+      { ...SENSITIVITY, pathPatterns: ["journal/*.md"], onSensitive: "skip" },
+    );
+    expect(decision.kind).toBe("skip");
+  });
+
+  it("phone regex does not hang on adversarial whitespace-heavy input", () => {
+    const snippet = "1" + " ".repeat(10_000) + "x";
+    const started = Date.now();
+    const decision = applyPrivacyPolicy(makeDiff([{ snippet }]), SENSITIVITY);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeLessThan(500);
+    expect(decision.kind).toBe("allow");
+  });
+
+  it("redacts US-formatted phone numbers but leaves bare digit runs alone", () => {
+    const decision = applyPrivacyPolicy(
+      makeDiff([{ snippet: "call 555-123-4567 or 1234567890" }]),
+      SENSITIVITY,
+    );
+    expect(decision.kind).toBe("redact");
+    if (decision.kind !== "redact") {
+      return;
+    }
+    expect(decision.diff.candidates[0].snippet).toContain("<REDACTED:phone>");
+    expect(decision.diff.candidates[0].snippet).toContain("1234567890");
+  });
+
   it("never leaks the original token substring when redacting", () => {
     const secret = "sk-supersecret1234567890";
     const decision = applyPrivacyPolicy(

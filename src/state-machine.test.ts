@@ -49,15 +49,15 @@ const UNSALVAGEABLE: VerifierCritique = {
   confidence: 0.4,
 };
 
-const PARAMS = { maxRounds: 2, watchdogMs: 150_000, correctorEnabled: true };
+const PARAMS = { maxRounds: 2, correctorEnabled: true };
 
-function verifyingAt(roundsUsed: number, startedAt = 100): StateMachineState {
-  return { kind: "verifying", diff: DIFF, roundsUsed, startedAt };
+function verifyingAt(roundsUsed: number): StateMachineState {
+  return { kind: "verifying", diff: DIFF, roundsUsed };
 }
 
 describe("state-machine", () => {
   it("idle + batch_received -> verifying", () => {
-    const next = transition(INITIAL_STATE, { kind: "batch_received", diff: DIFF, now: 1 }, PARAMS);
+    const next = transition(INITIAL_STATE, { kind: "batch_received", diff: DIFF }, PARAMS);
     expect(next.kind).toBe("verifying");
   });
 
@@ -135,28 +135,6 @@ describe("state-machine", () => {
     expect(next.reason.kind).toBe("verifier_error");
   });
 
-  it("watchdog fires past deadline -> flagged", () => {
-    const next = transition(
-      verifyingAt(0, 0),
-      { kind: "watchdog_fired", now: PARAMS.watchdogMs + 1 },
-      PARAMS,
-    );
-    expect(next.kind).toBe("flagged");
-    if (next.kind !== "flagged") {
-      return;
-    }
-    expect(next.reason.kind).toBe("watchdog_timeout");
-  });
-
-  it("watchdog fires before deadline -> still verifying", () => {
-    const next = transition(
-      verifyingAt(0, 0),
-      { kind: "watchdog_fired", now: PARAMS.watchdogMs - 1 },
-      PARAMS,
-    );
-    expect(next.kind).toBe("verifying");
-  });
-
   it("correcting + correction_applied -> verifying with rounds incremented", () => {
     const correcting: StateMachineState = {
       kind: "correcting",
@@ -196,7 +174,7 @@ describe("state-machine", () => {
       kind: "flagged",
       diff: DIFF,
       roundsUsed: 0,
-      reason: { kind: "watchdog_timeout" },
+      reason: { kind: "corrector_error", detail: "x" },
     };
     expect(transition(flagged, { kind: "correction_applied" }, PARAMS)).toEqual(flagged);
   });

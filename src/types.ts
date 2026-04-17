@@ -54,7 +54,7 @@ export type VerifierError =
 
 export type StateMachineState =
   | { kind: "idle" }
-  | { kind: "verifying"; diff: PromotionDiff; roundsUsed: number; startedAt: number }
+  | { kind: "verifying"; diff: PromotionDiff; roundsUsed: number }
   | { kind: "correcting"; diff: PromotionDiff; critique: VerifierCritique; roundsUsed: number }
   | { kind: "accepted"; diff: PromotionDiff; roundsUsed: number }
   | { kind: "flagged"; diff: PromotionDiff; reason: FlagReason; roundsUsed: number };
@@ -63,16 +63,14 @@ export type FlagReason =
   | { kind: "unsalvageable"; rationale: string }
   | { kind: "max_rounds_exceeded"; lastRationale: string }
   | { kind: "verifier_error"; error: VerifierError }
-  | { kind: "corrector_error"; detail: string }
-  | { kind: "watchdog_timeout" };
+  | { kind: "corrector_error"; detail: string };
 
 export type StateEvent =
-  | { kind: "batch_received"; diff: PromotionDiff; now: number }
+  | { kind: "batch_received"; diff: PromotionDiff }
   | { kind: "critique_returned"; critique: VerifierCritique }
   | { kind: "correction_applied" }
   | { kind: "verifier_error"; error: VerifierError }
-  | { kind: "corrector_error"; detail: string }
-  | { kind: "watchdog_fired"; now: number };
+  | { kind: "corrector_error"; detail: string };
 
 export type DreamPoliceEventSource = MemoryHostPromotionAppliedEvent;
 

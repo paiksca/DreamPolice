@@ -1,5 +1,4 @@
 import { buildPluginConfigSchema, z, type OpenClawPluginConfigSchema } from "../api.js";
-import type { DreamPhase } from "./types.js";
 
 export const DEFAULT_AUDIT_FILE = "memory/DREAMS_POLICE.md";
 export const DEFAULT_PAUSE_FILE = ".dream-police.paused";
@@ -7,7 +6,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 2000;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_MAX_ROUNDS = 2;
 export const DEFAULT_MIN_APPLIED = 1;
-export const DEFAULT_PHASES: DreamPhase[] = ["deep"];
+export const DEFAULT_PRIOR_CONTEXT_LINES = 40;
 export const DEFAULT_SENSITIVE_TAGS = ["secret", "private", "pii"] as const;
 export const DEFAULT_ON_SENSITIVE = "redact" as const;
 
@@ -25,6 +24,7 @@ const DreamPoliceConfigSource = z.strictObject({
     .strictObject({
       provider: ProviderSource.optional(),
       corrector: ProviderSource.nullable().optional(),
+      priorContextLines: z.number().int().min(0).max(500).optional(),
     })
     .optional(),
   retry: z
@@ -34,9 +34,7 @@ const DreamPoliceConfigSource = z.strictObject({
     .optional(),
   scope: z
     .strictObject({
-      phases: z.array(z.enum(["light", "deep", "rem"])).optional(),
       minApplied: z.number().int().min(1).optional(),
-      perTypeOptOut: z.array(z.string()).optional(),
     })
     .optional(),
   sensitivity: z
@@ -68,14 +66,13 @@ export type ResolvedDreamPoliceConfig = {
   verifier: {
     provider: DreamPoliceProviderConfig | null;
     corrector: DreamPoliceProviderConfig | null;
+    priorContextLines: number;
   };
   retry: {
     maxRounds: number;
   };
   scope: {
-    phases: DreamPhase[];
     minApplied: number;
-    perTypeOptOut: string[];
   };
   sensitivity: {
     tags: string[];
@@ -124,14 +121,13 @@ export function resolveDreamPoliceConfig(
     verifier: {
       provider,
       corrector,
+      priorContextLines: cfg.verifier?.priorContextLines ?? DEFAULT_PRIOR_CONTEXT_LINES,
     },
     retry: {
       maxRounds: cfg.retry?.maxRounds ?? DEFAULT_MAX_ROUNDS,
     },
     scope: {
-      phases: cfg.scope?.phases ?? [...DEFAULT_PHASES],
       minApplied: cfg.scope?.minApplied ?? DEFAULT_MIN_APPLIED,
-      perTypeOptOut: cfg.scope?.perTypeOptOut ?? [],
     },
     sensitivity: {
       tags: cfg.sensitivity?.tags ?? [...DEFAULT_SENSITIVE_TAGS],

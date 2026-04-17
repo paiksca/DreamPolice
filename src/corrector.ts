@@ -2,18 +2,49 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { PromotionDiff, VerifierCritique, VerifierIssue } from "./types.js";
 
-const REWRITE_CONFIDENCE_THRESHOLD = 0.6;
+export const REWRITE_CONFIDENCE_THRESHOLD = 0.6;
+export const TEMP_FILE_SUFFIX = ".dream-police.tmp";
 
 export type CorrectorDeps = {
   readFile?: (absolutePath: string) => Promise<string>;
+  /**
+   * Writes `content` to `absolutePath` with fsync semantics. Default uses
+   * `fs.open` + `write` + `sync` + `close` so the rename step below can be a
+   * true atomic replace even on power loss.
+   */
   writeFile?: (absolutePath: string, content: string) => Promise<void>;
   rename?: (from: string, to: string) => Promise<void>;
+  unlink?: (absolutePath: string) => Promise<void>;
 };
+
+async function defaultWriteFileSync(absolutePath: string, content: string): Promise<void> {
+  const handle = await fs.open(absolutePath, "w");
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
 
 const defaultDeps: Required<CorrectorDeps> = {
   readFile: (p) => fs.readFile(p, "utf8"),
-  writeFile: (p, c) => fs.writeFile(p, c, "utf8"),
+  writeFile: defaultWriteFileSync,
   rename: (from, to) => fs.rename(from, to),
+  unlink: (p) =>
+    fs.unlink(p).catch((err: unknown) => {
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+    }),
+};
+
+type EditKind = "remove" | "rewrite" | "annotate";
+
+type PendingEdit = {
+  kind: EditKind;
+  startLine: number;
+  endLine: number;
+  replacement: string[];
+  claim: string;
 };
 
 type ActionableIssue = {
@@ -41,42 +72,70 @@ function pickActionableIssues(critique: VerifierCritique): ActionableIssue[] {
     });
 }
 
-type PendingEdit = {
-  startLine: number;
-  endLine: number;
-  replacement: string[];
-};
-
 function buildAnnotation(issue: VerifierIssue, note: string): string {
-  const comment = `<!-- dream-police: ${note.replace(/-->/g, "--&gt;")} -->`;
-  return [issue.reason ? `${comment} // ${issue.reason}` : comment].join("");
+  const safeNote = note.replace(/-->/g, "--&gt;");
+  const reason = issue.reason ? ` // ${issue.reason.replace(/-->/g, "--&gt;")}` : "";
+  return `<!-- dream-police: ${safeNote} -->${reason}`;
 }
 
-function planEdits(actionable: ActionableIssue[]): PendingEdit[] {
-  const edits: PendingEdit[] = [];
-  for (const { issue, action } of actionable) {
-    const { startLine, endLine } = issue.location;
-    if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine > endLine) {
-      continue;
-    }
-    if (action.kind === "remove") {
-      edits.push({ startLine, endLine, replacement: [] });
-    } else if (action.kind === "rewrite") {
-      edits.push({
+function toPendingEdit(entry: ActionableIssue): PendingEdit | null {
+  const { issue, action } = entry;
+  const { startLine, endLine } = issue.location;
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine > endLine) {
+    return null;
+  }
+  switch (action.kind) {
+    case "remove":
+      return { kind: "remove", startLine, endLine, replacement: [], claim: issue.claim };
+    case "rewrite":
+      return {
+        kind: "rewrite",
         startLine,
         endLine,
         replacement: action.replacement.split("\n"),
-      });
-    } else {
-      const annotation = buildAnnotation(issue, action.note);
-      edits.push({
+        claim: issue.claim,
+      };
+    case "annotate":
+      return {
+        kind: "annotate",
         startLine: endLine,
         endLine,
-        replacement: [annotation],
-      });
-    }
+        replacement: [buildAnnotation(issue, action.note)],
+        claim: issue.claim,
+      };
+    default:
+      return null;
   }
-  return edits.toSorted((a, b) => b.startLine - a.startLine);
+}
+
+function rangesOverlap(a: PendingEdit, b: PendingEdit): boolean {
+  // Annotate is an insertion at `endLine` (0-width), so it only conflicts
+  // if another edit writes the exact same anchor line.
+  if (a.kind === "annotate" && b.kind !== "annotate") {
+    return a.endLine >= b.startLine && a.endLine <= b.endLine;
+  }
+  if (b.kind === "annotate" && a.kind !== "annotate") {
+    return b.endLine >= a.startLine && b.endLine <= a.endLine;
+  }
+  return a.startLine <= b.endLine && b.startLine <= a.endLine;
+}
+
+function dropOverlappingEdits(edits: PendingEdit[]): PendingEdit[] {
+  const kept: PendingEdit[] = [];
+  for (const edit of edits) {
+    if (kept.some((prior) => rangesOverlap(prior, edit))) continue;
+    kept.push(edit);
+  }
+  return kept;
+}
+
+function planEdits(actionable: ActionableIssue[]): PendingEdit[] {
+  const candidates = actionable
+    .map(toPendingEdit)
+    .filter((edit): edit is PendingEdit => edit !== null);
+  const unique = dropOverlappingEdits(candidates);
+  // Apply bottom-up so earlier edits don't shift later line numbers.
+  return unique.toSorted((a, b) => b.startLine - a.startLine);
 }
 
 function applyEdits(originalLines: string[], edits: PendingEdit[]): string[] {
@@ -87,16 +146,8 @@ function applyEdits(originalLines: string[], edits: PendingEdit[]): string[] {
     if (startIndex > endIndex) {
       continue;
     }
-    if (edit.replacement.length === 0) {
-      lines.splice(startIndex, endIndex - startIndex);
-      continue;
-    }
-    if (
-      edit.startLine === edit.endLine &&
-      edit.replacement.length === 1 &&
-      edit.replacement[0].startsWith("<!-- dream-police:")
-    ) {
-      lines.splice(endIndex, 0, edit.replacement[0]);
+    if (edit.kind === "annotate") {
+      lines.splice(endIndex, 0, ...edit.replacement);
       continue;
     }
     lines.splice(startIndex, endIndex - startIndex, ...edit.replacement);
@@ -106,7 +157,7 @@ function applyEdits(originalLines: string[], edits: PendingEdit[]): string[] {
 
 export type CorrectionSummary = {
   appliedEditCount: number;
-  affectedIssueKeys: string[];
+  affectedClaims: string[];
 };
 
 export async function applyCorrection(params: {
@@ -118,10 +169,16 @@ export async function applyCorrection(params: {
   const readFile = params.deps?.readFile ?? defaultDeps.readFile;
   const writeFile = params.deps?.writeFile ?? defaultDeps.writeFile;
   const rename = params.deps?.rename ?? defaultDeps.rename;
+  const unlink = params.deps?.unlink ?? defaultDeps.unlink;
 
   const actionable = pickActionableIssues(params.critique);
   if (actionable.length === 0) {
-    return { appliedEditCount: 0, affectedIssueKeys: [] };
+    return { appliedEditCount: 0, affectedClaims: [] };
+  }
+
+  const edits = planEdits(actionable);
+  if (edits.length === 0) {
+    return { appliedEditCount: 0, affectedClaims: [] };
   }
 
   const absoluteMemoryPath = path.isAbsolute(params.diff.memoryPath)
@@ -129,16 +186,21 @@ export async function applyCorrection(params: {
     : path.resolve(params.workspaceDir, params.diff.memoryPath);
 
   const original = await readFile(absoluteMemoryPath);
-  const edits = planEdits(actionable);
   const updatedLines = applyEdits(original.split("\n"), edits);
   const updatedContent = updatedLines.join("\n");
 
-  const tempPath = `${absoluteMemoryPath}.dream-police.tmp`;
-  await writeFile(tempPath, updatedContent);
-  await rename(tempPath, absoluteMemoryPath);
+  const tempPath = `${absoluteMemoryPath}${TEMP_FILE_SUFFIX}`;
+  try {
+    await writeFile(tempPath, updatedContent);
+    await rename(tempPath, absoluteMemoryPath);
+  } catch (err) {
+    // Best-effort cleanup — if rename failed we don't want to leave a stray tmp.
+    await unlink(tempPath).catch(() => {});
+    throw err;
+  }
 
   return {
     appliedEditCount: edits.length,
-    affectedIssueKeys: actionable.map((item) => item.issue.claim),
+    affectedClaims: edits.map((edit) => edit.claim),
   };
 }

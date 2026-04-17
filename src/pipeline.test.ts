@@ -208,6 +208,45 @@ describe("processPromotionEvent", () => {
     expect(auditContent).toContain("roundsAttempted: 2");
   });
 
+  it("flags with verdict=unsalvageable on unsalvageable verdict and never attempts correction", async () => {
+    let call = 0;
+    const result = await processPromotionEvent({
+      workspaceDir: "/ws",
+      config: BASE_CONFIG,
+      event: event(),
+      logger: silentLogger,
+      deps: {
+        ...testDeps,
+        verifier: {
+          fetch: async () => {
+            call += 1;
+            return new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        verdict: "unsalvageable",
+                        issues: [],
+                        rationale: "multiple contradictions with prior memory",
+                        confidence: 0.2,
+                      }),
+                    },
+                  },
+                ],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          },
+        },
+      },
+    });
+    expect(call).toBe(1);
+    expect(result.finalState.kind).toBe("flagged");
+    expect(auditContent).toContain("unsalvageable");
+    expect(auditContent).toContain("multiple contradictions");
+  });
+
   it("writes a privacy-flag audit entry when onSensitive=flag matches", async () => {
     const sensitiveConfig = resolveDreamPoliceConfig({
       enabled: true,

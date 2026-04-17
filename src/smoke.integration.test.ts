@@ -102,6 +102,7 @@ describe("dream-police end-to-end smoke", () => {
   });
 
   afterAll(async () => {
+    delete process.env.DREAM_POLICE_SMOKE_KEY;
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     });

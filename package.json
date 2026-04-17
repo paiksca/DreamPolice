@@ -20,8 +20,27 @@
     "url": "https://github.com/paiksca/DreamPolice/issues"
   },
   "homepage": "https://github.com/paiksca/DreamPolice",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js"
+    },
+    "./runtime-api": {
+      "types": "./dist/runtime-api.d.ts",
+      "import": "./dist/runtime-api.js"
+    }
+  },
   "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts.map",
     "index.ts",
     "api.ts",
     "runtime-api.ts",
@@ -32,6 +51,9 @@
     "LICENSE"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -39,11 +61,6 @@
   },
   "peerDependencies": {
     "openclaw": ">=2026.4.15"
-  },
-  "peerDependenciesMeta": {
-    "openclaw": {
-      "optional": false
-    }
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
