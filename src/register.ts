@@ -13,8 +13,8 @@ export function registerDreamPolice(api: OpenClawPluginApi): void {
   registerDreamPoliceGateway(api, () => service.getStatus());
 
   api.registerCli(
-    ({ program }) => {
-      registerDreamPoliceCli(program, resolved, api.config);
+    (ctx) => {
+      registerDreamPoliceCli(ctx.program, resolved, api.config, ctx.workspaceDir);
     },
     {
       descriptors: [

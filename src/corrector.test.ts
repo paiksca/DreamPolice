@@ -213,6 +213,38 @@ describe("applyCorrection", () => {
     expect(written).toContain("<!-- dream-police: user-authored -->");
   });
 
+  it("clamps edits past EOF so two oversized edits collapse to one (no double-append)", async () => {
+    const summary = await applyCorrection({
+      workspaceDir: "/ws",
+      diff: DIFF,
+      critique: critique({
+        issues: [
+          {
+            claim: "past-eof a",
+            location: { memoryPath: "memory/long-term.md", startLine: 100, endLine: 9999 },
+            reason: "bad",
+            severity: "error",
+            suggestedAction: { kind: "annotate", note: "note a" },
+          },
+          {
+            claim: "past-eof b",
+            location: { memoryPath: "memory/long-term.md", startLine: 200, endLine: 8888 },
+            reason: "bad",
+            severity: "error",
+            suggestedAction: { kind: "annotate", note: "note b" },
+          },
+        ],
+      }),
+      deps: {
+        readFile: async () => ORIGINAL,
+        writeFile: async () => {},
+        rename: async () => {},
+      },
+    });
+    // Both edits clamp to the same EOF anchor; overlap dedup keeps exactly one.
+    expect(summary.appliedEditCount).toBe(1);
+  });
+
   it("drops overlapping edits instead of corrupting the file", async () => {
     let written = "";
     const summary = await applyCorrection({

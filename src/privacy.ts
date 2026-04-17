@@ -38,6 +38,8 @@ function matchesPathPattern(pathPatterns: string[], sourcePath: string): boolean
   for (const pattern of pathPatterns) {
     if (pattern.length === 0) continue;
     if (sourcePath === pattern) return true;
+    // Whole-tree match: `**` alone means "anything", including nested paths.
+    if (pattern === "**") return true;
     if (pattern.endsWith("/**")) {
       if (isWithinPrefix(sourcePath, pattern.slice(0, -3))) return true;
       continue;

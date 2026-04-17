@@ -118,6 +118,23 @@ function buildPrompt(params: VerifyParams, nonce: string): string {
     .join("\n\n");
 }
 
+/**
+ * OpenAI returns `message.content` as a string, but several compatible
+ * servers (some Ollama builds, newer OpenAI response shapes, OpenRouter
+ * pass-throughs) emit an array of content parts. Flatten those into text.
+ */
+function extractMessageText(
+  content: string | Array<{ type?: string; text?: string }> | null | undefined,
+): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .join("");
+  }
+  return "";
+}
+
 function parseCritique(text: string): VerifierCritique | null {
   let parsed: unknown;
   try {
@@ -184,9 +201,16 @@ async function postChat(
       return { ok: false, error: { code: "http_error", status: response.status } };
     }
     const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{
+        message?: {
+          content?:
+            | string
+            | Array<{ type?: string; text?: string }>
+            | null;
+        };
+      }>;
     };
-    const text = payload.choices?.[0]?.message?.content ?? "";
+    const text = extractMessageText(payload.choices?.[0]?.message?.content);
     const critique = parseCritique(text);
     if (!critique) {
       return { ok: false, error: { code: "bad_json" } };

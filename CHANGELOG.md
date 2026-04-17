@@ -7,7 +7,9 @@ All notable changes to DreamPolice are documented here. This project follows
 
 ### Added
 
-- `openclaw dream-police status|pause|resume` CLI subcommands.
+- `openclaw dream-police status|pause|resume` CLI subcommands. The CLI reads
+  `workspaceDir` from OpenClaw's CLI context when available, and accepts a
+  `--workspace` flag to override.
 - `dreamPolice.status` gateway RPC method (scope `operator.read`) returning a
   live runtime snapshot.
 - Prompt-injection hardening: every verifier-visible snippet is wrapped in
@@ -20,6 +22,21 @@ All notable changes to DreamPolice are documented here. This project follows
 - Tests for `service.ts`, unsalvageable verdict in the pipeline, corrector
   `annotate` path, `JournalTailer` start/stop lifecycle, and privacy-glob
   segment boundaries.
+
+### Fixed (triple-check pass)
+
+- `openclaw.plugin.json` JSON schema agreed with the zod schema: removed
+  `scope.phases` and `scope.perTypeOptOut` (now gone from both surfaces),
+  added `verifier.priorContextLines`.
+- Corrector now clamps edit ranges against the actual file length before
+  overlap detection, preventing two edits whose ranges both extend past EOF
+  from both appending.
+- Verifier response parser handles the array-of-content-parts shape used by
+  some OpenAI-compatible servers in addition to plain-string `content`.
+- Bare `**` glob pattern in `sensitivity.pathPatterns` now matches every
+  path (previously silently matched only single-segment paths).
+- Tailer's `resolveDeps` is computed once in the constructor instead of on
+  every getter access.
 
 ### Changed
 

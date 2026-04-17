@@ -99,6 +99,14 @@ describe("applyPrivacyPolicy", () => {
     expect(decision.kind).toBe("allow");
   });
 
+  it("bare ** matches any path including nested ones", () => {
+    const decision = applyPrivacyPolicy(
+      makeDiff([{ sourcePath: "deep/nested/path/file.md", snippet: "benign" }]),
+      { ...SENSITIVITY, pathPatterns: ["**"], onSensitive: "skip" },
+    );
+    expect(decision.kind).toBe("skip");
+  });
+
   it("inline * glob matches within a single segment", () => {
     const decision = applyPrivacyPolicy(
       makeDiff([{ sourcePath: "journal/secret.md", snippet: "benign" }]),

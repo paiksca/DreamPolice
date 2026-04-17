@@ -37,13 +37,21 @@ async function readCursor(absolutePath: string): Promise<CursorShape | null> {
 }
 
 /**
- * Resolve the workspace dir, honoring an explicit `--workspace` flag. When no
- * flag is given we fall back to the current working directory, which is what
- * OpenClaw's built-in memory commands also assume.
+ * Resolve the workspace dir with this priority:
+ *   1. explicit `--workspace` flag (wins if set)
+ *   2. OpenClaw's CLI-context `workspaceDir` (correct when user invoked
+ *      `openclaw` from a subdirectory)
+ *   3. `process.cwd()` as a last resort.
  */
-function resolveWorkspace(explicit: string | undefined): string {
+function resolveWorkspace(
+  explicit: string | undefined,
+  fromCli: string | undefined,
+): string {
   if (explicit && explicit.trim().length > 0) {
     return path.resolve(explicit);
+  }
+  if (fromCli && fromCli.trim().length > 0) {
+    return path.resolve(fromCli);
   }
   return process.cwd();
 }
@@ -52,8 +60,9 @@ export async function cmdStatus(
   config: ResolvedDreamPoliceConfig,
   _appConfig: OpenClawConfig,
   options: StatusOptions,
+  fromCli?: string,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(options.workspace);
+  const workspaceDir = resolveWorkspace(options.workspace, fromCli);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   const cursorPath = path.resolve(workspaceDir, CURSOR_RELATIVE_PATH);
   const auditPath = path.isAbsolute(config.auditFile)
@@ -112,8 +121,9 @@ export async function cmdPause(
   config: ResolvedDreamPoliceConfig,
   _appConfig: OpenClawConfig,
   options: PauseOptions,
+  fromCli?: string,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(options.workspace);
+  const workspaceDir = resolveWorkspace(options.workspace, fromCli);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   await fs.mkdir(path.dirname(pausePath), { recursive: true });
   await fs.writeFile(pausePath, new Date().toISOString() + "\n", "utf8");
@@ -124,8 +134,9 @@ export async function cmdResume(
   config: ResolvedDreamPoliceConfig,
   _appConfig: OpenClawConfig,
   options: ResumeOptions,
+  fromCli?: string,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(options.workspace);
+  const workspaceDir = resolveWorkspace(options.workspace, fromCli);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   try {
     await fs.unlink(pausePath);
@@ -143,6 +154,7 @@ export function registerDreamPoliceCli(
   program: CliProgram,
   config: ResolvedDreamPoliceConfig,
   appConfig: OpenClawConfig,
+  cliWorkspaceDir?: string,
 ): void {
   const root = program
     .command("dream-police")
@@ -152,24 +164,24 @@ export function registerDreamPoliceCli(
     .command("status")
     .description("Show whether dream-police is enabled, paused, and what it has processed")
     .option("--json", "emit JSON instead of human-readable text")
-    .option("--workspace <dir>", "workspace directory (default: cwd)")
+    .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
     .action(async (options: StatusOptions) => {
-      await cmdStatus(config, appConfig, options);
+      await cmdStatus(config, appConfig, options, cliWorkspaceDir);
     });
 
   root
     .command("pause")
     .description("Pause the supervisor by creating the pause file (polled live)")
-    .option("--workspace <dir>", "workspace directory (default: cwd)")
+    .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
     .action(async (options: PauseOptions) => {
-      await cmdPause(config, appConfig, options);
+      await cmdPause(config, appConfig, options, cliWorkspaceDir);
     });
 
   root
     .command("resume")
     .description("Resume the supervisor by removing the pause file")
-    .option("--workspace <dir>", "workspace directory (default: cwd)")
+    .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
     .action(async (options: ResumeOptions) => {
-      await cmdResume(config, appConfig, options);
+      await cmdResume(config, appConfig, options, cliWorkspaceDir);
     });
 }

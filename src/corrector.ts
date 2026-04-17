@@ -78,12 +78,21 @@ function buildAnnotation(issue: VerifierIssue, note: string): string {
   return `<!-- dream-police: ${safeNote} -->${reason}`;
 }
 
-function toPendingEdit(entry: ActionableIssue): PendingEdit | null {
+function toPendingEdit(entry: ActionableIssue, fileLineCount: number): PendingEdit | null {
   const { issue, action } = entry;
-  const { startLine, endLine } = issue.location;
-  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine > endLine) {
+  const rawStart = issue.location.startLine;
+  const rawEnd = issue.location.endLine;
+  if (!Number.isInteger(rawStart) || !Number.isInteger(rawEnd) || rawStart > rawEnd) {
     return null;
   }
+  // Clamp against the actual file length here so overlap detection and edit
+  // application agree on ranges. Lines are 1-indexed; the last addressable
+  // line is `fileLineCount`. Ranges entirely past EOF collapse to EOF and
+  // are treated as equivalent appends — which the overlap check will then
+  // correctly dedup.
+  const maxLine = Math.max(1, fileLineCount);
+  const startLine = Math.min(Math.max(1, rawStart), maxLine);
+  const endLine = Math.min(Math.max(startLine, rawEnd), maxLine);
   switch (action.kind) {
     case "remove":
       return { kind: "remove", startLine, endLine, replacement: [], claim: issue.claim };
@@ -129,9 +138,9 @@ function dropOverlappingEdits(edits: PendingEdit[]): PendingEdit[] {
   return kept;
 }
 
-function planEdits(actionable: ActionableIssue[]): PendingEdit[] {
+function planEdits(actionable: ActionableIssue[], fileLineCount: number): PendingEdit[] {
   const candidates = actionable
-    .map(toPendingEdit)
+    .map((entry) => toPendingEdit(entry, fileLineCount))
     .filter((edit): edit is PendingEdit => edit !== null);
   const unique = dropOverlappingEdits(candidates);
   // Apply bottom-up so earlier edits don't shift later line numbers.
@@ -176,17 +185,18 @@ export async function applyCorrection(params: {
     return { appliedEditCount: 0, affectedClaims: [] };
   }
 
-  const edits = planEdits(actionable);
-  if (edits.length === 0) {
-    return { appliedEditCount: 0, affectedClaims: [] };
-  }
-
   const absoluteMemoryPath = path.isAbsolute(params.diff.memoryPath)
     ? params.diff.memoryPath
     : path.resolve(params.workspaceDir, params.diff.memoryPath);
 
   const original = await readFile(absoluteMemoryPath);
-  const updatedLines = applyEdits(original.split("\n"), edits);
+  const originalLines = original.split("\n");
+  const edits = planEdits(actionable, originalLines.length);
+  if (edits.length === 0) {
+    return { appliedEditCount: 0, affectedClaims: [] };
+  }
+
+  const updatedLines = applyEdits(originalLines, edits);
   const updatedContent = updatedLines.join("\n");
 
   const tempPath = `${absoluteMemoryPath}${TEMP_FILE_SUFFIX}`;

@@ -155,11 +155,10 @@ export class JournalTailer {
   private running = false;
   private timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private inflight: Promise<void> | null = null;
+  private readonly deps: Required<TailerDeps>;
 
-  constructor(private readonly params: TailerParams) {}
-
-  private get deps(): Required<TailerDeps> {
-    return resolveDeps(this.params.deps);
+  constructor(private readonly params: TailerParams) {
+    this.deps = resolveDeps(params.deps);
   }
 
   private get journalPath(): string {

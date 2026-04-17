@@ -112,9 +112,15 @@ LM Studio, OpenRouter, etc.
 - **`flag`**: sensitive candidates are not sent, but an entry is appended to
   `DREAMS_POLICE.md` so you know a dream touched sensitive content.
 
-`sensitivity.pathPatterns` accepts either an exact path, a `prefix/**`
-directory-segment match, or an inline `*` that matches within a single
-directory segment (it does not cross `/`).
+`sensitivity.pathPatterns` supports these forms:
+
+- Exact path match (`notes/secret.md`) — matches only that file.
+- `prefix/**` — matches `prefix/anything/nested.md` but **not**
+  `prefix-other/file.md` (segment boundary is respected).
+- Inline `*` (`journal/*.md`) — matches within a single directory segment; it
+  does **not** cross `/`.
+- Bare `**` — shorthand for "match every path".
+- Patterns without `*` or `**` are treated as exact paths, not prefixes.
 
 ### Verifier output schema
 

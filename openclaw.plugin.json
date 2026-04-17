@@ -64,7 +64,8 @@
                 "additionalProperties": { "type": "string" }
               }
             }
-          }
+          },
+          "priorContextLines": { "type": "integer", "minimum": 0, "maximum": 500 }
         }
       },
       "retry": {
@@ -78,15 +79,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "phases": {
-            "type": "array",
-            "items": { "type": "string", "enum": ["light", "deep", "rem"] }
-          },
-          "minApplied": { "type": "integer", "minimum": 1 },
-          "perTypeOptOut": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
+          "minApplied": { "type": "integer", "minimum": 1 }
         }
       },
       "sensitivity": {
