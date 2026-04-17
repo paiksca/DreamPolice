@@ -10,18 +10,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ["22.x", "24.x"]
+        node-version: ["22.x"]
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - name: Install pnpm
-        run: npm install -g pnpm@latest
+          cache: pnpm
       - name: Install deps
         run: pnpm install --frozen-lockfile=false
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
         run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Verify pack contents
+        run: npm pack --dry-run

@@ -1,13 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig, OpenClawPluginApi } from "../api.js";
-import { CURSOR_RELATIVE_PATH } from "./tailer.js";
 import type { ResolvedDreamPoliceConfig } from "./config.js";
+import { CURSOR_RELATIVE_PATH } from "./tailer.js";
 
 type CliRegistrar = Parameters<OpenClawPluginApi["registerCli"]>[0];
 type CliProgram = Parameters<CliRegistrar>[0]["program"];
 
-type StatusOptions = { json?: boolean };
+type StatusOptions = { json?: boolean; workspace?: string };
+type PauseOptions = { workspace?: string };
+type ResumeOptions = { workspace?: string };
 
 type CursorShape = { offset: number; lastTimestamp: string };
 
@@ -34,17 +36,24 @@ async function readCursor(absolutePath: string): Promise<CursorShape | null> {
   }
 }
 
-function resolveWorkspace(appConfig: OpenClawConfig): string {
-  const fromConfig = (appConfig as { workspaceDir?: string }).workspaceDir;
-  return fromConfig || process.cwd();
+/**
+ * Resolve the workspace dir, honoring an explicit `--workspace` flag. When no
+ * flag is given we fall back to the current working directory, which is what
+ * OpenClaw's built-in memory commands also assume.
+ */
+function resolveWorkspace(explicit: string | undefined): string {
+  if (explicit && explicit.trim().length > 0) {
+    return path.resolve(explicit);
+  }
+  return process.cwd();
 }
 
-async function cmdStatus(
+export async function cmdStatus(
   config: ResolvedDreamPoliceConfig,
-  appConfig: OpenClawConfig,
+  _appConfig: OpenClawConfig,
   options: StatusOptions,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(appConfig);
+  const workspaceDir = resolveWorkspace(options.workspace);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   const cursorPath = path.resolve(workspaceDir, CURSOR_RELATIVE_PATH);
   const auditPath = path.isAbsolute(config.auditFile)
@@ -99,22 +108,24 @@ async function cmdStatus(
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-async function cmdPause(
+export async function cmdPause(
   config: ResolvedDreamPoliceConfig,
-  appConfig: OpenClawConfig,
+  _appConfig: OpenClawConfig,
+  options: PauseOptions,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(appConfig);
+  const workspaceDir = resolveWorkspace(options.workspace);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   await fs.mkdir(path.dirname(pausePath), { recursive: true });
   await fs.writeFile(pausePath, new Date().toISOString() + "\n", "utf8");
   process.stdout.write(`dream-police: paused (wrote ${pausePath})\n`);
 }
 
-async function cmdResume(
+export async function cmdResume(
   config: ResolvedDreamPoliceConfig,
-  appConfig: OpenClawConfig,
+  _appConfig: OpenClawConfig,
+  options: ResumeOptions,
 ): Promise<void> {
-  const workspaceDir = resolveWorkspace(appConfig);
+  const workspaceDir = resolveWorkspace(options.workspace);
   const pausePath = path.resolve(workspaceDir, config.pauseFile);
   try {
     await fs.unlink(pausePath);
@@ -141,6 +152,7 @@ export function registerDreamPoliceCli(
     .command("status")
     .description("Show whether dream-police is enabled, paused, and what it has processed")
     .option("--json", "emit JSON instead of human-readable text")
+    .option("--workspace <dir>", "workspace directory (default: cwd)")
     .action(async (options: StatusOptions) => {
       await cmdStatus(config, appConfig, options);
     });
@@ -148,14 +160,16 @@ export function registerDreamPoliceCli(
   root
     .command("pause")
     .description("Pause the supervisor by creating the pause file (polled live)")
-    .action(async () => {
-      await cmdPause(config, appConfig);
+    .option("--workspace <dir>", "workspace directory (default: cwd)")
+    .action(async (options: PauseOptions) => {
+      await cmdPause(config, appConfig, options);
     });
 
   root
     .command("resume")
     .description("Resume the supervisor by removing the pause file")
-    .action(async () => {
-      await cmdResume(config, appConfig);
+    .option("--workspace <dir>", "workspace directory (default: cwd)")
+    .action(async (options: ResumeOptions) => {
+      await cmdResume(config, appConfig, options);
     });
 }

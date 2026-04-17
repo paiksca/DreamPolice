@@ -93,11 +93,11 @@ async function readCursor(cursorPath: string, deps: Required<TailerDeps>): Promi
   try {
     const raw = await deps.readFile(cursorPath);
     const parsed = JSON.parse(raw) as Partial<Cursor>;
-    if (typeof parsed.offset !== "number" || parsed.offset < 0) {
+    if (!Number.isFinite(parsed.offset) || (parsed.offset as number) < 0) {
       return { offset: 0, lastTimestamp: "" };
     }
     return {
-      offset: parsed.offset,
+      offset: parsed.offset as number,
       lastTimestamp: typeof parsed.lastTimestamp === "string" ? parsed.lastTimestamp : "",
     };
   } catch {
