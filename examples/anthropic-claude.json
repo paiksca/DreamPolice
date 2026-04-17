@@ -1,0 +1,23 @@
+{
+  "_comment": "Claude via Anthropic's OpenAI-compatible proxy. Point baseUrl at whatever proxy you use (e.g., https://api.anthropic.com/v1 with the OpenAI-compat header) or an internal gateway that speaks OpenAI and forwards to Claude.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "https://api.anthropic.com/v1/openai",
+              "apiKeyEnv": "ANTHROPIC_API_KEY",
+              "model": "claude-opus-4-7"
+            },
+            "priorContextLines": 40
+          },
+          "retry": { "maxRounds": 2 },
+          "sensitivity": { "onSensitive": "redact" },
+          "history": { "enabled": true }
+        }
+      }
+    }
+  }
+}

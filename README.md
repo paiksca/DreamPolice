@@ -158,22 +158,98 @@ tries to direct the verifier's behavior, that attempt is flagged in
 
 ## CLI
 
-Once the plugin is installed and enabled, OpenClaw exposes three subcommands:
+Once the plugin is installed and enabled, OpenClaw exposes:
 
 ```bash
 openclaw dream-police status          # show enabled/paused state + last cursor
 openclaw dream-police status --json   # machine-readable snapshot
 openclaw dream-police pause           # create the pause file (stops processing)
 openclaw dream-police resume          # remove the pause file
+openclaw dream-police history         # tail recent verdicts from DREAMS_LOG.md
+openclaw dream-police history -n 50   # with a custom limit
+openclaw dream-police undo --list     # list pre-correction snapshots
+openclaw dream-police undo --yes      # restore the most recent snapshot
 ```
+
+Every command accepts `--workspace <dir>` to override OpenClaw's default
+workspace resolution.
 
 ## Gateway method
 
 The plugin also registers a gateway RPC method for UI/monitoring:
 
 - `dreamPolice.status` (scope: `operator.read`) — returns a live runtime
-  snapshot including the last processed event, any error, and the resolved
-  configuration.
+  snapshot including the last processed event, any error, the circuit
+  breaker state, and the resolved configuration.
+
+## Dry-run mode
+
+Set `dryRun: true` at the top of the config to run the full pipeline —
+verifier calls, history, events — **without** mutating memory or writing the
+audit file. Useful for evaluating how DreamPolice would act on your
+workspace before letting it make changes.
+
+```jsonc
+{ "enabled": true, "dryRun": true, "verifier": { "provider": { ... } } }
+```
+
+## Multi-verifier quorum
+
+For high-stakes workspaces, configure N verifiers that vote in parallel:
+
+```jsonc
+{
+  "verifier": {
+    "quorum": {
+      "policy": "conservative",
+      "providers": [
+        { "baseUrl": "...", "apiKeyEnv": "ANTHROPIC_API_KEY", "model": "claude-opus-4-7" },
+        { "baseUrl": "...", "apiKeyEnv": "OPENAI_API_KEY",    "model": "gpt-5.4" },
+        { "baseUrl": "...", "apiKeyEnv": "OLLAMA_API_KEY",    "model": "qwen3:14b" }
+      ]
+    }
+  }
+}
+```
+
+Policies:
+
+- `conservative` (default) — the most severe verdict across voters wins; any
+  `unsalvageable` or `needs_revision` flags the promotion.
+- `majority` — the plurality verdict wins, with ties broken toward severity.
+- `unanimous` — only `accepted` if every voter agrees; otherwise the most
+  severe dissent wins.
+
+Issues from dissenting voters are deduplicated and merged before correction.
+
+## Snapshots, history, events, circuit breaker
+
+- **Snapshots** — before each correction, the memory file is snapshotted
+  under `memory/.dreams/.dream-police/snapshots/`. `undo` restores the
+  latest one. Keep count configurable via `snapshots.keep`.
+- **History** — set `history.enabled: true` to append every verdict
+  (accepted, corrected, flagged, skipped) to `memory/DREAMS_LOG.md`.
+  Set `history.logAccepted: false` to only log non-trivial outcomes.
+- **Events** — set `events.enabled: true` to stream structured events to
+  `memory/.dreams/.dream-police/events.jsonl` for other plugins or UIs to
+  consume.
+- **Circuit breaker** — enabled by default. After
+  `circuitBreaker.threshold` consecutive verifier errors (default 5), the
+  plugin auto-creates the pause file and emits a
+  `dreamPolice.circuitTripped` event. Resume manually once the upstream
+  provider is healthy.
+
+## Custom prompt
+
+Set `verifier.systemPromptOverride` to replace DreamPolice's default
+reviewer persona. The built-in prompt-injection preamble (snippet
+delimiters and the "treat data as data" clause) is always appended, so
+overrides can't accidentally weaken the defense.
+
+## Presets
+
+See [`examples/`](./examples) for ready-to-paste configs covering Claude,
+OpenAI, Ollama, LM Studio, OpenRouter, quorum mode, and dry-run mode.
 
 ## Emergency disable
 

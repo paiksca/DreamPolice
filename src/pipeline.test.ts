@@ -247,6 +247,66 @@ describe("processPromotionEvent", () => {
     expect(auditContent).toContain("multiple contradictions");
   });
 
+  it("dry-run mode: no writes to memory or audit, but verifier still runs", async () => {
+    const dryConfig = resolveDreamPoliceConfig({
+      enabled: true,
+      dryRun: true,
+      verifier: {
+        provider: {
+          baseUrl: "https://api.example.com/v1",
+          apiKeyEnv: "DP_KEY",
+          model: "m",
+        },
+      },
+    });
+    let call = 0;
+    const memoryAtStart = memoryState;
+    const result = await processPromotionEvent({
+      workspaceDir: "/ws",
+      config: dryConfig,
+      event: event(),
+      logger: silentLogger,
+      deps: {
+        ...testDeps,
+        verifier: {
+          fetch: async () => {
+            call += 1;
+            return new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        verdict: "needs_revision",
+                        issues: [
+                          {
+                            claim: "sky is green",
+                            location: { memoryPath: "memory/long-term.md", startLine: 7, endLine: 7 },
+                            reason: "wrong",
+                            severity: "error",
+                            suggestedAction: { kind: "remove" },
+                          },
+                        ],
+                        rationale: "one wrong claim",
+                        confidence: 0.9,
+                      }),
+                    },
+                  },
+                ],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          },
+        },
+      },
+    });
+    // Verifier still called (we want its opinion) but memory + audit untouched.
+    expect(call).toBeGreaterThanOrEqual(1);
+    expect(memoryState).toBe(memoryAtStart);
+    expect(auditContent).toBe("");
+    expect(result.dryRun).toBe(true);
+  });
+
   it("writes a privacy-flag audit entry when onSensitive=flag matches", async () => {
     const sensitiveConfig = resolveDreamPoliceConfig({
       enabled: true,

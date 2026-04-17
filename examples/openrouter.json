@@ -1,0 +1,25 @@
+{
+  "_comment": "OpenRouter: a single API key brokers access to many providers. Set OPENROUTER_API_KEY. The `model` value is a slash-separated provider/model id (https://openrouter.ai/models).",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "https://openrouter.ai/api/v1",
+              "apiKeyEnv": "OPENROUTER_API_KEY",
+              "model": "anthropic/claude-sonnet-4-6",
+              "headers": {
+                "HTTP-Referer": "https://github.com/paiksca/DreamPolice",
+                "X-Title": "DreamPolice"
+              }
+            }
+          },
+          "retry": { "maxRounds": 2 },
+          "sensitivity": { "onSensitive": "redact" }
+        }
+      }
+    }
+  }
+}

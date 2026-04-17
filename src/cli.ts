@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig, OpenClawPluginApi } from "../api.js";
 import type { ResolvedDreamPoliceConfig } from "./config.js";
+import { readRecentHistory } from "./history.js";
+import { listSnapshots, restoreSnapshot } from "./snapshot.js";
 import { CURSOR_RELATIVE_PATH } from "./tailer.js";
 
 type CliRegistrar = Parameters<OpenClawPluginApi["registerCli"]>[0];
@@ -10,6 +12,8 @@ type CliProgram = Parameters<CliRegistrar>[0]["program"];
 type StatusOptions = { json?: boolean; workspace?: string };
 type PauseOptions = { workspace?: string };
 type ResumeOptions = { workspace?: string };
+type HistoryOptions = { workspace?: string; limit?: string };
+type UndoOptions = { workspace?: string; memoryPath?: string; list?: boolean; yes?: boolean };
 
 type CursorShape = { offset: number; lastTimestamp: string };
 
@@ -150,6 +154,88 @@ export async function cmdResume(
   }
 }
 
+export async function cmdHistory(
+  config: ResolvedDreamPoliceConfig,
+  _appConfig: OpenClawConfig,
+  options: HistoryOptions,
+  fromCli?: string,
+): Promise<void> {
+  const workspaceDir = resolveWorkspace(options.workspace, fromCli);
+  const limit = options.limit ? Number.parseInt(options.limit, 10) : 20;
+  const raw = await readRecentHistory({
+    workspaceDir,
+    historyFile: config.history.file,
+    limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
+  });
+  if (!raw) {
+    process.stdout.write(
+      `dream-police: no history at ${path.resolve(workspaceDir, config.history.file)} (history.enabled may be false)\n`,
+    );
+    return;
+  }
+  process.stdout.write(raw.endsWith("\n") ? raw : raw + "\n");
+}
+
+export async function cmdUndo(
+  config: ResolvedDreamPoliceConfig,
+  _appConfig: OpenClawConfig,
+  options: UndoOptions,
+  fromCli?: string,
+): Promise<void> {
+  const workspaceDir = resolveWorkspace(options.workspace, fromCli);
+  const snapshots = await listSnapshots({
+    workspaceDir,
+    snapshotDir: config.snapshots.dir,
+    ...(options.memoryPath ? { memoryPath: options.memoryPath } : {}),
+  });
+  if (options.list) {
+    if (snapshots.length === 0) {
+      process.stdout.write("dream-police: no snapshots on disk.\n");
+      return;
+    }
+    for (const s of snapshots) {
+      process.stdout.write(`${new Date(s.mtimeMs).toISOString()}  ${s.filename}\n`);
+    }
+    return;
+  }
+  if (snapshots.length === 0) {
+    process.stdout.write(
+      "dream-police: nothing to undo (no snapshots). Enable snapshots.enabled or run a correction first.\n",
+    );
+    return;
+  }
+  const latest = snapshots[0];
+  // Derive memoryPath from the snapshot filename or use the explicit --memory-path.
+  const targetMemoryPath =
+    options.memoryPath ?? inferMemoryPathFromSnapshotFilename(latest.filename) ?? "memory/long-term.md";
+  if (!options.yes) {
+    process.stdout.write(
+      `Would restore ${targetMemoryPath} from ${latest.filename}. Pass --yes to confirm.\n`,
+    );
+    return;
+  }
+  await restoreSnapshot({
+    workspaceDir,
+    snapshotAbsolutePath: latest.absolutePath,
+    memoryPath: targetMemoryPath,
+  });
+  process.stdout.write(`dream-police: restored ${targetMemoryPath} from ${latest.filename}\n`);
+}
+
+/**
+ * Best-effort inverse of `slugifyMemoryPath`. The snapshot filename shape is
+ * `<slug>.<iso-with-dashes>.snap`; we can recover the slug but not the exact
+ * original path, so `--memory-path` should be passed explicitly whenever it
+ * isn't `memory/long-term.md`.
+ */
+function inferMemoryPathFromSnapshotFilename(filename: string): string | null {
+  const stripped = filename.replace(/\.snap$/, "");
+  const parts = stripped.split(".");
+  if (parts.length < 2) return null;
+  const slug = parts[0];
+  return slug.replace(/_/g, "/");
+}
+
 export function registerDreamPoliceCli(
   program: CliProgram,
   config: ResolvedDreamPoliceConfig,
@@ -183,5 +269,27 @@ export function registerDreamPoliceCli(
     .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
     .action(async (options: ResumeOptions) => {
       await cmdResume(config, appConfig, options, cliWorkspaceDir);
+    });
+
+  root
+    .command("history")
+    .description("Show recent DreamPolice verdicts from DREAMS_LOG.md")
+    .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
+    .option("-n, --limit <count>", "maximum entries to show", "20")
+    .action(async (options: HistoryOptions) => {
+      await cmdHistory(config, appConfig, options, cliWorkspaceDir);
+    });
+
+  root
+    .command("undo")
+    .description(
+      "Restore the most recent pre-correction snapshot of the memory file (pass --yes to confirm)",
+    )
+    .option("--workspace <dir>", "workspace directory (overrides OpenClaw default)")
+    .option("--memory-path <path>", "memory file to restore (default: inferred from snapshot)")
+    .option("--list", "list snapshots instead of restoring")
+    .option("-y, --yes", "actually perform the restore")
+    .action(async (options: UndoOptions) => {
+      await cmdUndo(config, appConfig, options, cliWorkspaceDir);
     });
 }

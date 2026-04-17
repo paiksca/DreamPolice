@@ -1,0 +1,41 @@
+{
+  "_comment": "Multi-verifier quorum: three models vote and the conservative policy picks the most-severe verdict. Use for high-stakes workspaces where a single hallucinating verifier shouldn't be able to either rubber-stamp or veto in isolation.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "https://api.openai.com/v1",
+              "apiKeyEnv": "OPENAI_API_KEY",
+              "model": "gpt-5.4"
+            },
+            "quorum": {
+              "policy": "conservative",
+              "providers": [
+                {
+                  "baseUrl": "https://api.anthropic.com/v1/openai",
+                  "apiKeyEnv": "ANTHROPIC_API_KEY",
+                  "model": "claude-opus-4-7"
+                },
+                {
+                  "baseUrl": "https://api.openai.com/v1",
+                  "apiKeyEnv": "OPENAI_API_KEY",
+                  "model": "gpt-5.4"
+                },
+                {
+                  "baseUrl": "http://127.0.0.1:11434/v1",
+                  "apiKeyEnv": "OLLAMA_API_KEY",
+                  "model": "qwen3:14b"
+                }
+              ]
+            }
+          },
+          "retry": { "maxRounds": 2 },
+          "history": { "enabled": true, "logAccepted": true }
+        }
+      }
+    }
+  }
+}

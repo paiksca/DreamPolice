@@ -5,6 +5,41 @@ All notable changes to DreamPolice are documented here. This project follows
 
 ## Unreleased
 
+### Added — v0.2 feature push
+
+- **Dry-run mode** (`dryRun: true`) — run the full verifier/correction
+  pipeline without ever mutating memory or the audit file. History and
+  events still record what would have happened.
+- **History log** (`history.enabled: true`) — append every verdict
+  (accepted, flagged, skipped, corrected) to `memory/DREAMS_LOG.md`.
+  `openclaw dream-police history` tails it.
+- **Snapshots + `undo`** (`snapshots.enabled: true`, default) — capture the
+  memory file before each correction into
+  `memory/.dreams/.dream-police/snapshots/`. `openclaw dream-police undo
+  --list` shows them; `--yes` restores the most recent.
+- **Circuit breaker** (`circuitBreaker.enabled: true`, default) — after N
+  consecutive verifier errors (default 5) the plugin auto-creates the
+  pause file and emits a `dreamPolice.circuitTripped` event so a runaway
+  provider can't burn through API spend.
+- **Plugin events** (`events.enabled: true`) — stream
+  `dreamPolice.verified|corrected|flagged|skipped|circuitTripped` events to
+  `memory/.dreams/.dream-police/events.jsonl` for other plugins/UIs.
+- **Custom prompt override** (`verifier.systemPromptOverride`) — replace
+  the default reviewer persona; the injection-defense preamble is always
+  appended so overrides can't weaken the security contract.
+- **Verifier quorum** (`verifier.quorum.providers`) — run multiple
+  verifiers in parallel with `conservative`, `majority`, or `unanimous`
+  policies. Dissenting issues are merged for the corrector.
+- **Provider presets** — `examples/` directory with ready-to-paste configs
+  for Claude, OpenAI, Ollama, LM Studio, OpenRouter, quorum mode, and
+  dry-run mode.
+- **Design doc**: `docs/shadow-dreamer.md` sketches what true collaborative
+  multi-agent dreaming would need and why it belongs upstream in
+  memory-core. Quorum covers the plugin-side half today.
+
+CLI gained `history` and `undo` subcommands; tests now number 100 (up from
+80).
+
 ### Added
 
 - `openclaw dream-police status|pause|resume` CLI subcommands. The CLI reads

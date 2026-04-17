@@ -1,0 +1,22 @@
+{
+  "_comment": "Evaluation / trust-building mode. Runs the full verification and logs verdicts to memory/DREAMS_LOG.md, but never mutates memory. Flip `dryRun` to false once you've reviewed a few dreams and are comfortable with DreamPolice's calls.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "dryRun": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "https://api.openai.com/v1",
+              "apiKeyEnv": "OPENAI_API_KEY",
+              "model": "gpt-5.4"
+            }
+          },
+          "history": { "enabled": true, "logAccepted": true },
+          "events": { "enabled": true }
+        }
+      }
+    }
+  }
+}

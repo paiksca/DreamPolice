@@ -1,0 +1,23 @@
+{
+  "_comment": "Fully local verification via Ollama. Requires `ollama serve` running and a model pulled (e.g., `ollama pull qwen3:14b`). Set OLLAMA_API_KEY to any non-empty value; Ollama ignores auth but the plugin requires an env var name.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "http://127.0.0.1:11434/v1",
+              "apiKeyEnv": "OLLAMA_API_KEY",
+              "model": "qwen3:14b",
+              "timeoutMs": 60000
+            }
+          },
+          "retry": { "maxRounds": 1 },
+          "sensitivity": { "onSensitive": "redact" },
+          "history": { "enabled": true }
+        }
+      }
+    }
+  }
+}

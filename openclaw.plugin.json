@@ -33,6 +33,7 @@
     "additionalProperties": false,
     "properties": {
       "enabled": { "type": "boolean" },
+      "dryRun": { "type": "boolean" },
       "verifier": {
         "type": "object",
         "additionalProperties": false,
@@ -65,7 +66,35 @@
               }
             }
           },
-          "priorContextLines": { "type": "integer", "minimum": 0, "maximum": 500 }
+          "priorContextLines": { "type": "integer", "minimum": 0, "maximum": 500 },
+          "systemPromptOverride": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "quorum": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "baseUrl": { "type": "string" },
+                    "apiKeyEnv": { "type": "string" },
+                    "model": { "type": "string" },
+                    "timeoutMs": { "type": "number", "minimum": 1000 },
+                    "headers": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" }
+                    }
+                  }
+                }
+              },
+              "policy": {
+                "type": "string",
+                "enum": ["conservative", "majority", "unanimous"]
+              }
+            }
+          }
         }
       },
       "retry": {
@@ -98,6 +127,40 @@
             "type": "string",
             "enum": ["skip", "redact", "flag"]
           }
+        }
+      },
+      "history": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "file": { "type": "string" },
+          "logAccepted": { "type": "boolean" }
+        }
+      },
+      "snapshots": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "dir": { "type": "string" },
+          "keep": { "type": "integer", "minimum": 1, "maximum": 1000 }
+        }
+      },
+      "circuitBreaker": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "threshold": { "type": "integer", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "events": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "file": { "type": "string" }
         }
       },
       "auditFile": { "type": "string" },

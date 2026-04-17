@@ -1,0 +1,22 @@
+{
+  "_comment": "Fully local verification via LM Studio's OpenAI-compatible server. Default port is 1234; enable the server in LM Studio's UI. Any non-empty API key env satisfies the plugin.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "http://127.0.0.1:1234/v1",
+              "apiKeyEnv": "LM_STUDIO_API_KEY",
+              "model": "local-model",
+              "timeoutMs": 60000
+            }
+          },
+          "retry": { "maxRounds": 1 },
+          "sensitivity": { "onSensitive": "redact" }
+        }
+      }
+    }
+  }
+}

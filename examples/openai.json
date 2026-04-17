@@ -1,0 +1,23 @@
+{
+  "_comment": "Vanilla OpenAI. Requires OPENAI_API_KEY in the shell that starts OpenClaw.",
+  "plugins": {
+    "entries": {
+      "dream-police": {
+        "config": {
+          "enabled": true,
+          "verifier": {
+            "provider": {
+              "baseUrl": "https://api.openai.com/v1",
+              "apiKeyEnv": "OPENAI_API_KEY",
+              "model": "gpt-5.4"
+            },
+            "priorContextLines": 40
+          },
+          "retry": { "maxRounds": 2 },
+          "sensitivity": { "onSensitive": "redact" },
+          "circuitBreaker": { "enabled": true, "threshold": 5 }
+        }
+      }
+    }
+  }
+}
