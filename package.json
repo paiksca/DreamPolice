@@ -1,0 +1,62 @@
+{
+  "name": "openclaw-dream-police",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin that supervises dream memory consolidations with an external verifier and a correction loop.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "ai",
+    "memory",
+    "verifier",
+    "fact-checking"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paiksca/DreamPolice.git"
+  },
+  "bugs": {
+    "url": "https://github.com/paiksca/DreamPolice/issues"
+  },
+  "homepage": "https://github.com/paiksca/DreamPolice",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "api.ts",
+    "runtime-api.ts",
+    "openclaw.plugin.json",
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.15"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openclaw": ">=2026.4.15",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.4.15"
+    }
+  }
+}

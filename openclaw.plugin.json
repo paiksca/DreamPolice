@@ -1,0 +1,115 @@
+{
+  "id": "dream-police",
+  "name": "Dream Police",
+  "description": "Supervises dream memory consolidations. Uses an external verifier to fact-check promotions and re-runs the dream with targeted critiques before flagging anything that still fails.",
+  "uiHints": {
+    "enabled": {
+      "label": "Enabled",
+      "help": "Turn the dream-police supervisor on. Disabled by default."
+    },
+    "verifier.provider.baseUrl": {
+      "label": "Verifier Base URL",
+      "help": "OpenAI-compatible base URL for the verifier model (e.g. https://api.openai.com/v1)."
+    },
+    "verifier.provider.apiKeyEnv": {
+      "label": "API Key Env Var",
+      "help": "Name of the environment variable holding the verifier API key. The key itself never lives in config."
+    },
+    "verifier.provider.model": {
+      "label": "Verifier Model",
+      "help": "Model id to use for verification and correction."
+    },
+    "retry.maxRounds": {
+      "label": "Max Correction Rounds",
+      "help": "How many times dream-police will ask the dreamer to revise before flagging for manual review."
+    },
+    "sensitivity.onSensitive": {
+      "label": "On Sensitive Content",
+      "help": "What to do when a memory is tagged as private: skip verification, redact before sending, or flag in the audit file."
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "verifier": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "baseUrl": { "type": "string" },
+              "apiKeyEnv": { "type": "string" },
+              "model": { "type": "string" },
+              "timeoutMs": { "type": "number", "minimum": 1000 },
+              "headers": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          },
+          "corrector": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "baseUrl": { "type": "string" },
+              "apiKeyEnv": { "type": "string" },
+              "model": { "type": "string" },
+              "timeoutMs": { "type": "number", "minimum": 1000 },
+              "headers": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "retry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxRounds": { "type": "integer", "minimum": 0, "maximum": 5 }
+        }
+      },
+      "scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "phases": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["light", "deep", "rem"] }
+          },
+          "minApplied": { "type": "integer", "minimum": 1 },
+          "perTypeOptOut": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "sensitivity": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "pathPatterns": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "onSensitive": {
+            "type": "string",
+            "enum": ["skip", "redact", "flag"]
+          }
+        }
+      },
+      "auditFile": { "type": "string" },
+      "pauseFile": { "type": "string" },
+      "pollIntervalMs": { "type": "number", "minimum": 250 }
+    }
+  }
+}
